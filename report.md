@@ -49,8 +49,6 @@ Once at home, either stable or critical (but rejected), the patient recovers at 
    - \(K\) identical resources.  
    - Occupied or free.  
 
-*(Although we do not usually call resources “entities” in the same sense as patients, in some simulation frameworks they are indeed represented as separate entity types with states.)*
-
 ---
 
 ## **3. Events**
@@ -63,8 +61,6 @@ Once at home, either stable or critical (but rejected), the patient recovers at 
    - Else, the patient is forced to go home.  
 4. **Discharge from Hospital**: A patient in a bed finishes service (time ~ Exp(\(\mu_{cb}\))).  
 5. **Recovery at Home**: A patient at home (stable or critical) finishes healing (time ~ Exp(\(\mu_s\)) for stable or Exp(\(\mu_{ch}\)) for critical-with-\(\alpha\) factor).
-
-**Note**: In a typical **discrete-event simulation** model, you may or may not explicitly track the “home-completed” event if it’s purely for calculating the total time to recovery. However, because the HW specifically wants the average time a patient gets better and the proportion of patients that are home vs. hospital, you will track and record the time when each patient fully recovers.
 
 ---
 
@@ -109,8 +105,7 @@ Once at home, either stable or critical (but rejected), the patient recovers at 
 
 ## **7. Flowchart**
 
-Below is a high-level flowchart showing the patient lifecycle. (Text-based version here; in your report, you should provide a proper diagram.)
-
+Below is a high-level flowchart showing the patient lifecycle. 
 
 
 ---
@@ -142,7 +137,7 @@ Below is a high-level flowchart showing the patient lifecycle. (Text-based versi
    5. Repeat
    ```
 
-### **Event Routines** (in words)
+### **Event Routines** 
 
 - **Arrival()**  
   ```
@@ -192,13 +187,9 @@ Below is a high-level flowchart showing the patient lifecycle. (Text-based versi
   2. Patient leaves the system (record final stats if needed).
   ```
 
-*(You will adapt these routines as needed if your code is structured differently, but the overall logic should be similar.)*
-
 ---
 
 ## **9. Stationary Analysis (Queueing Network)**
-
-Although the homework specifically wants a **simulation**, it also requests an approximate **steady-state / stationary** solution. The main components:
 
 1. **Triage**: \(S\)-server M/M/S queue.  
    - Arrival rate: \(\lambda\).  
@@ -238,432 +229,589 @@ From these, you can derive:
     \lambda \, p_1 \;+\; \lambda\,p_2\,B 
     = \lambda \left[p_1 + p_2\,B\right].
   \]
-  (In steady-state, that’s the rate of “flow” to home, if you prefer to interpret it as a throughput measure.)
 
 ---
 
 # **Part 2.1**
 
-
-# **Step 0: Setup**
-
-- **Parameters** (from Part 1.1 / your assignment):
-  - \(\lambda = 1\) (arrivals ~ Exp(1))
-  - \(\mu_t = 0.476190476\) (triage ~ Exp(0.476190476))
-  - \(\mu_s = 0.16\) (stable home-care ~ Exp(0.16))
-  - \(\mu_{cb} = 0.118518519\) (critical in hospital ~ Exp(0.118518519))
-  - \(p_1 = 0.2\) (stable); \(p_2 = 0.8\) (critical)
-  - \(S = 3\) triage nurses
-  - \(K = 9\) beds
-  - \(\alpha \sim U[1.25, 1.75]\) for forced-home critical patients
-
-- **Initial Conditions**:
-  - Simulation clock \( = 0\).  
-  - System is empty: no patients in queue, no one in service, no beds occupied.  
-  - **Future Event List (FEL)** initially has only the **first arrival** event at some time \(A_1\). We generate \(A_1\) from Exp(\(\lambda=1\)).
+Below is a **step-by-step hand-simulation** for **Part 2.1** using our project parameters and **seed=4040800189**, stopping once **5 patients** have been fully healed.
 
 ---
 
-## **Generate Random Values (Example)**
+# **1. Random Draws (Seed=4040800189)**
 
-We’ll set a small seed (e.g., `seed=99999`) just to illustrate. Below, we do a quick code snippet to produce the random draws that we’ll use for the first 5 patients. (In a real “by-hand” assignment, you might use random-number tables or a provided list of random values.)
-
+Using a snippet like:
 ```python
 import random
-random.seed(99999)
+random.seed(4040800189)
 
-# Generate interarrival times (Exp(1)):
-inter_arrivals = [random.expovariate(1.0) for _ in range(10)]
-
-# Generate triage times (Exp(0.476190476)):
-triage_times = [random.expovariate(0.476190476) for _ in range(10)]
-
-# Generate uniform(0,1) for deciding stable vs critical:
-is_stable_randoms = [random.random() for _ in range(10)]
-
-# Generate hospital times (Exp(0.118518519)):
-hospital_times = [random.expovariate(0.118518519) for _ in range(10)]
-
-# Generate alpha for forced-home critical, then compute forced-home times:
-alphas = [random.uniform(1.25, 1.75) for _ in range(10)]
-forced_home_times = [random.expovariate(0.118518519 / a) for a in alphas]
-
-# Generate stable home-care times (Exp(0.16)):
-stable_home_times = [random.expovariate(0.16) for _ in range(10)]
+# We'll just show the first 5 draws in each category (enough for 5 patients).
+inter_arrivals = [random.expovariate(1.0) for _ in range(5)]
+triage_times   = [random.expovariate(0.476190476) for _ in range(5)]
+is_stable      = [random.random() for _ in range(5)]  # to decide stable vs. critical
+hospital_times = [random.expovariate(0.118518519) for _ in range(5)]
+stable_times   = [random.expovariate(0.16) for _ in range(5)]
 ```
 
-Let’s pretend we got (rounded to 3 decimals) the following:
+we get this:
 
-- **Interarrival times**: [0.291, 0.121, 0.940, 0.269, 0.017, …]  
-- **Triage times**: [3.723, 0.069, 1.688, 3.397, 0.412, …]  
-- **is_stable_randoms**: [0.774, 0.007, 0.290, 0.843, 0.537, …]  
-  - If \(\text{rand} \le 0.2\), stable; else critical.  
-- **Hospital times**: [4.136, 16.257, 2.333, 0.815, 7.516, …]  
-- **\(\alpha\)**: [1.665, 1.612, 1.498, 1.458, 1.268, …]  
-  - Then **forced_home_times**: [random exp. with rate = 0.118518519 / alpha].  
-- **Stable home times**: [8.843, 0.536, 0.244, 4.353, 6.871, …]
+1. **Interarrival times** (Exp(1.0)) for the first 5 arrivals:  
+   - \(A_1 = 2.976\)  
+   - \(A_2 = 0.6614\)  
+   - \(A_3 = 1.6735\)  
+   - \(A_4 = 0.2868\)  
+   - \(A_5 = 1.1872\)  
 
-*(We won’t list out all 10 values for brevity, but we’ll show how we use them for the first 5 patients.)*
+   (So the arrival times will be:  
+   - P1 at 2.976  
+   - P2 at 2.976 + 0.6614 = 3.6374  
+   - P3 at 3.6374 + 1.6735 = 5.3109  
+   - P4 at 5.3109 + 0.2868 = 5.5977  
+   - P5 at 5.5977 + 1.1872 = 6.7849)
+
+2. **Triage times** (Exp(0.476190476)):  
+   - P1: 1.1826  
+   - P2: 2.0448  
+   - P3: 0.9115  
+   - P4: 1.8633  
+   - P5: 0.3142  
+
+3. **is_stable_randoms** (Uniform(0,1)) to decide stable vs. critical:  
+   - P1: 0.4541 → >0.2 → critical  
+   - P2: 0.4358 → >0.2 → critical  
+   - P3: 0.7336 → >0.2 → critical  
+   - P4: 0.8607 → >0.2 → critical  
+   - P5: 0.0260 → ≤0.2 → stable  
+
+4. **Hospital times** (Exp(0.118518519)) for critical patients:  
+   - P1: 12.8249  
+   - P2: 0.6268  
+   - P3: 5.5226  
+   - P4: 13.9519  
+   - P5: 2.2053  (not needed if P5 is stable, but we list it)
+
+5. **Stable home-care times** (Exp(0.16)) for stable patients:  
+   - P1: 5.7986  
+   - P2: 19.0437  
+   - P3: 0.0660  
+   - P4: 7.2421  
+   - P5: 10.4462  (this is the relevant one, since P5 turned out stable)
+
+We have:
+- \(\lambda = 1\)
+- \(\mu_t = 0.476190476\)
+- \(\mu_s = 0.16\)
+- \(\mu_{cb} = 0.118518519\)
+- \(p_1 = 0.2\), \(p_2 = 0.8\)
+- \(S=3\) triage nurses, \(K=9\) beds
+
+*No forced-home critical is likely, since \(K=9\) is plenty for 5 patients.*
 
 ---
 
-## **Hand-Simulation Table**
+# **2. Step-by-Step Simulation Table**
 
-We’ll track the system step by step. Here’s the recommended columns:
+We run until **5 patients** finish (are “healed”). Key system state variables:  
+- **TQ**: # waiting in triage queue  
+- **BN**: # busy nurses (out of 3)  
+- **OB**: # occupied beds (out of 9)  
 
-1. **Clock**: The current simulation time.  
-2. **Event**: Which event is happening (Arrival, DepartureTriage, etc.).  
-3. **FEL** (Future Event List)**:** We show the scheduled events with their times (in ascending order).  
-4. **System State**: 
-   - TQ = Number waiting for triage  
-   - BN = Number of busy nurses  
-   - OB = Number of occupied beds  
-5. **Any additional** info: e.g., “Patient #1 is stable,” “Patient #2 is critical,” etc.
-
-Below is **one example** using the sample random draws. We’ll walk through until the **5th patient** is **fully healed**.
-
----
-
-### **Initialization**
+## **Initialization**
 
 - **Clock = 0**  
-- System empty: (TQ=0, BN=0, OB=0)  
-- Generate first arrival, \(A_1\): from `inter_arrivals[0] = 0.291`  
-- **FEL** = { (0.291, Arrival, P1) }
-
-| Clock | Event | FEL (time, type, patient)                                           | TQ | BN | OB | Comments                    |
-|-------|-------|---------------------------------------------------------------------|----|----|----|-----------------------------|
-| 0.000 | Start | {(0.291, **Arrival**, P1)}                                          | 0  | 0  | 0  | System empty, no events yet |
+- TQ=0, BN=0, OB=0 (empty system)  
+- **FEL** = { (2.976, Arrival, P1) }
 
 ---
 
-### **Event 1**: (0.291, Arrival of Patient #1)
+### **Event 1**: (2.976, Arrival of Patient #1)
 
-1. **Clock** ← 0.291  
-2. BN=0 < S=3 → P1 goes **directly to triage**.  
-   - BN becomes 1.  
-   - TQ still 0.  
-3. Schedule next arrival: `inter_arrivals[1] = 0.121`. So next arrival = 0.291 + 0.121 = 0.412 (this will be Patient #2).  
-4. Generate triage time for P1 from `triage_times[0] = 3.723`. So P1’s triage finishes at time 0.291 + 3.723 = 4.014.  
-5. Update FEL.
+1. Clock → 2.976  
+2. BN=0 < 3 → P1 goes directly to triage → BN=1, TQ=0  
+3. Schedule next arrival: 2.976 + 0.6614 = 3.6374 → (3.6374, Arrival, P2)  
+4. Triage time (P1): 1.1826 → departure triage at 2.976 + 1.1826 = 4.1586  
+5. **FEL** = {(3.6374, Arrival, P2), (4.1586, DepartureTriage, P1)}
 
-**FEL** after event 1:
-- (0.412, Arrival, P2)
-- (4.014, DepartureTriage, P1)
-
-| Clock | Event                | FEL                                                           | TQ | BN | OB | Comments                                                                         |
-|-------|----------------------|---------------------------------------------------------------|----|----|----|----------------------------------------------------------------------------------|
-| 0.291 | Arrival of **P1**   | {(0.412, Arrival, P2), (4.014, DepartureTriage, P1)}          | 0  | 1  | 0  | P1 in triage; next arrival at 0.412                                             |
+| Clock | Event             | FEL                                                | TQ | BN | OB | Comments                  |
+|-------|-------------------|----------------------------------------------------|----|----|----|---------------------------|
+| 0.000 | Start (No event) | {(2.976, Arr, P1)}                                 | 0  | 0  | 0  | System empty             |
+| 2.976 | **Arr(P1)**      | {(3.6374,Arr,P2),(4.1586,DepT,P1)}                 | 0  | 1  | 0  | P1 triage started        |
 
 ---
 
-### **Event 2**: (0.412, Arrival of Patient #2)
+### **Event 2**: (3.6374, Arrival of Patient #2)
 
-1. **Clock** ← 0.412  
-2. BN=1 < S=3 → P2 goes **immediately** to triage.  
-   - BN = 2  
-3. Schedule next arrival: `inter_arrivals[2] = 0.940`, so next arrival time = 0.412 + 0.940 = 1.352 (Patient #3).  
-4. Triage time for P2 from `triage_times[1] = 0.069`, finishing at 0.412 + 0.069 = 0.481.  
-5. Update FEL accordingly.
+1. Clock → 3.6374  
+2. BN=1<3 → P2 enters triage → BN=2, TQ=0  
+3. Next arrival: 3.6374 + 1.6735 = 5.3109 → (5.3109, Arrival, P3)  
+4. Triage time (P2): 2.0448 → departure triage = 3.6374 + 2.0448 = 5.6822  
+5. **FEL** = {(4.1586,DepT,P1), (5.3109,Arr,P3), (5.6822,DepT,P2)}
 
-**FEL** after event 2:
-- (0.481, DepartureTriage, P2)
-- (1.352, Arrival, P3)
-- (4.014, DepartureTriage, P1)
-
-| Clock | Event                | FEL                                                                              | TQ | BN | OB | Comments                                           |
-|-------|----------------------|----------------------------------------------------------------------------------|----|----|----|----------------------------------------------------|
-| 0.412 | Arrival of **P2**   | {(0.481, DepTriage, P2), (1.352, Arr, P3), (4.014, DepTriage, P1)}                | 0  | 2  | 0  | P2 also starts triage; BN=2 now                    |
+| Clock  | Event             | FEL                                                          | TQ | BN | OB | Comments           |
+|--------|-------------------|--------------------------------------------------------------|----|----|----|--------------------|
+| 3.6374 | **Arr(P2)**       | {(4.1586,DepT,P1),(5.3109,Arr,P3),(5.6822,DepT,P2)}          | 0  | 2  | 0  | P2 triage started  |
 
 ---
 
-### **Event 3**: (0.481, DepartureTriage of P2)
+### **Event 3**: (4.1586, DepartureTriage, P1)
 
-1. **Clock** ← 0.481  
-2. P2 finishes triage. One nurse is now free, but we must check if TQ>0.  
-   - TQ=0, so BN=2 → BN=1 (only P1 remains in triage).  
-3. Determine if P2 is stable or critical. The random draw is `is_stable_randoms[1] = 0.007`, which is **≤ 0.2** → **stable**.  
-4. A stable patient goes home with rate \(\mu_s=0.16\). From `stable_home_times[0] = 8.843`, we get P2’s home recovery finish time = 0.481 + 8.843 = 9.324.  
-5. Schedule that event: (9.324, RecoveryHome, P2).
+1. Clock → 4.1586  
+2. BN=2 → BN=1 (queue=0)  
+3. Check stable vs. critical for P1: stable draw=0.4541 → >0.2 → **critical**  
+4. Beds? OB=0 < 9 → P1 goes to bed → OB=1  
+   - Hospital time=12.8249 → discharge=4.1586 + 12.8249 = 16.9835  
+5. **FEL** = {(5.3109,Arr,P3),(5.6822,DepT,P2),(16.9835,TreatedAtHospital,P1)}
 
-**FEL** now:
-- (1.352, Arrival, P3)
-- (4.014, DepartureTriage, P1)
-- (9.324, RecoveryHome, P2)
-
-| Clock | Event                       | FEL                                                                                  | TQ | BN | OB | Comments                                           |
-|-------|-----------------------------|--------------------------------------------------------------------------------------|----|----|----|----------------------------------------------------|
-| 0.481 | DepTriage of **P2**        | {(1.352, Arr, P3), (4.014, DepTriage, P1), (9.324, RecoveryHome, P2)}                | 0  | 1  | 0  | P2 stable → goes home; finishing home at 9.324     |
+| Clock  | Event                  | FEL                                                                  | TQ | BN | OB | Comments                       |
+|--------|------------------------|----------------------------------------------------------------------|----|----|----|--------------------------------|
+| 4.1586 | **DepT(P1)**          | {(5.3109,Arr,P3),(5.6822,DepT,P2),(16.9835,TAH,P1)}                   | 0  | 1  | 1  | P1 is critical; bed #1 in use. |
 
 ---
 
-### **Event 4**: (1.352, Arrival of P3)
+### **Event 4**: (5.3109, Arrival, P3)
 
-1. **Clock** ← 1.352  
-2. BN=1 < 3 → P3 **immediately** starts triage.  
-   - BN=2 again (P1 still in triage, plus P3).  
-3. Next arrival: `inter_arrivals[3] = 0.269`, so arrival of P4 at 1.352 + 0.269 = 1.621.  
-4. Triage time for P3 from `triage_times[2] = 1.688`, finishing at 1.352 + 1.688 = 3.040.  
-5. Update FEL.
+1. Clock → 5.3109  
+2. BN=1<3 → P3 immediately starts triage → BN=2  
+3. Next arrival= 5.3109 + 0.2868= 5.5977 → (5.5977, Arr, P4)  
+4. Triage time P3= 0.9115 → finishes=5.3109 +0.9115=6.2224  
+5. **FEL**= {(5.5977,Arr,P4),(5.6822,DepT,P2),(6.2224,DepT,P3),(16.9835,TAH,P1)}
 
-**FEL**:
-- (1.621, Arrival, P4)
-- (3.040, DepartureTriage, P3)
-- (4.014, DepartureTriage, P1)
-- (9.324, RecoveryHome, P2)
-
-| Clock | Event               | FEL                                                                                               | TQ | BN | OB | Comments                               |
-|-------|---------------------|---------------------------------------------------------------------------------------------------|----|----|----|----------------------------------------|
-| 1.352 | Arrival of **P3**  | {(1.621, Arr, P4), (3.040, DepTriage, P3), (4.014, DepTriage, P1), (9.324, RecoveryHome, P2)}      | 0  | 2  | 0  | P3 starts triage immediately (BN=2).   |
+| Clock  | Event             | FEL                                                                                 | TQ | BN | OB | Comments                |
+|--------|-------------------|-------------------------------------------------------------------------------------|----|----|----|-------------------------|
+| 5.3109 | **Arr(P3)**       | {(5.5977,Arr,P4),(5.6822,DepT,P2),(6.2224,DepT,P3),(16.9835,TAH,P1)}                 | 0  | 2  | 1  | P3 in triage            |
 
 ---
 
-### **Event 5**: (1.621, Arrival of P4)
+### **Event 5**: (5.5977, Arrival, P4)
 
-1. **Clock** ← 1.621  
-2. BN=2 < 3 → P4 also goes **immediately** to triage. Now BN=3, which is the maximum.  
-3. Next arrival: `inter_arrivals[4] = 0.017`, so P5 arrives at 1.621 + 0.017 = 1.638.  
-4. Triage time for P4 from `triage_times[3] = 3.397`, finishing at 1.621 + 3.397 = 5.018.  
-5. FEL updated:
+1. Clock → 5.5977  
+2. BN=2<3 → P4 starts triage → BN=3  
+3. Next arrival=5.5977 +1.1872= 6.7849 → (6.7849, Arr, P5)  
+4. Triage time P4=1.8633 → dep triage=5.5977+1.8633=7.461  
+5. **FEL**= {(5.6822,DepT,P2),(6.2224,DepT,P3),(6.7849,Arr,P5),(7.461,DepT,P4),(16.9835,TAH,P1)}
 
-**FEL**:
-- (1.638, Arrival, P5)
-- (3.040, DepartureTriage, P3)
-- (4.014, DepartureTriage, P1)
-- (5.018, DepartureTriage, P4)
-- (9.324, RecoveryHome, P2)
-
-| Clock | Event               | FEL                                                                                               | TQ | BN | OB | Comments                                         |
-|-------|---------------------|---------------------------------------------------------------------------------------------------|----|----|----|--------------------------------------------------|
-| 1.621 | Arrival of **P4**  | {(1.638, Arr, P5), (3.040, DepTriage, P3), (4.014, DepTriage, P1), (5.018, DepTriage, P4), … }      | 0  | 3  | 0  | All nurses now busy with P1, P3, P4.             |
+| Clock  | Event             | FEL                                                                                                | TQ | BN | OB | Comments                  |
+|--------|-------------------|----------------------------------------------------------------------------------------------------|----|----|----|---------------------------|
+| 5.5977 | **Arr(P4)**       | {(5.6822,DepT,P2),(6.2224,DepT,P3),(6.7849,Arr,P5),(7.461,DepT,P4),(16.9835,TAH,P1)}               | 0  | 3  | 1  | P4 in triage (all 3 busy) |
 
 ---
 
-### **Event 6**: (1.638, Arrival of P5)
+### **Event 6**: (5.6822, DepartureTriage, P2)
 
-1. **Clock** ← 1.638  
-2. BN=3 = S=3 → **no free nurse** → P5 must wait. TQ=1.  
-3. Next arrival: `inter_arrivals[5]` etc. (We only need 5 total patients *healed*, but we can keep going for completeness if needed. Let’s just do it to see if we need more arrivals in the FEL. Suppose `inter_arrivals[5] = 0.350` → next arrival at 1.988 for P6, etc.)  
-4. No triage start for P5, it’s in queue.
+1. Clock → 5.6822  
+2. BN=3→2  
+3. P2 stable vs. critical? is_stable[1] =0.4358→>0.2→**critical**  
+4. OB=1<9→ P2 gets a bed → OB=2  
+   - Hospital time=0.6268→ discharge=5.6822+0.6268=6.309  
+5. **FEL**= {(6.2224,DepT,P3),(6.309,TAH,P2),(6.7849,Arr,P5),(7.461,DepT,P4),(16.9835,TAH,P1)}
 
-**FEL** might become:
-- (1.988, Arrival, P6)  
-- (3.040, DepartureTriage, P3)  
-- (4.014, DepartureTriage, P1)  
-- (5.018, DepartureTriage, P4)  
-- (9.324, RecoveryHome, P2)
-
-| Clock | Event               | FEL                                                                                                     | TQ | BN | OB | Comments                                  |
-|-------|---------------------|---------------------------------------------------------------------------------------------------------|----|----|----|-------------------------------------------|
-| 1.638 | Arrival of **P5**  | {(1.988, Arr, P6), (3.040, DepTriage, P3), (4.014, DepTriage, P1), (5.018, DepTriage, P4), …}            | 1  | 3  | 0  | P5 waits in triage queue.                 |
-
-*(We won’t detail P6 arrival, as we only need to see first 5 **healed**. If the queue matters for them, we keep going. Let’s see how quickly the first 5 finish.)*
+| Clock  | Event                | FEL                                                                                                  | TQ | BN | OB | Comments                           |
+|--------|----------------------|------------------------------------------------------------------------------------------------------|----|----|----|------------------------------------|
+| 5.6822 | **DepT(P2)**        | {(6.2224,DepT,P3),(6.309,TAH,P2),(6.7849,Arr,P5),(7.461,DepT,P4),(16.9835,TAH,P1)}                    | 0  | 2  | 2  | P2 is critical; bed #2 in use now. |
 
 ---
 
-### **Event 7**: (3.040, DepartureTriage of P3)
+### **Event 7**: (6.2224, DepartureTriage, P3)
 
-1. **Clock** ← 3.040  
-2. P3 finishes triage. TQ=1 > 0 → The nurse who just finished with P3 *immediately* takes P5 from the queue.  
-   - So TQ=0 again, BN remains 3.  
-   - We must schedule P5’s triage departure:
-     - Triage time from the next random draw in `triage_times`: for P5 it would be `triage_times[4] = 0.412`.  
-     - So P5’s departure from triage = 3.040 + 0.412 = 3.452.  
-3. Check if P3 is stable or critical. `is_stable_randoms[2] = 0.290`, which is > 0.2 → **critical**.  
-   - We have 9 beds, OB=0 < 9 → P3 is admitted.  
-   - Hospital time from `hospital_times[0] = 4.136`. DischargeHospital event for P3 at 3.040 + 4.136 = 7.176.  
-4. Update FEL.
+1. Clock → 6.2224  
+2. BN=2→1 (queue=0)  
+3. P3 stable vs. critical? is_stable[2]=0.7336→>0.2→**critical**  
+4. OB=2<9→ P3 admitted → OB=3  
+   - hospital time=5.5226→ discharge=6.2224+5.5226=11.745  
+5. **FEL**= {(6.309,TAH,P2),(6.7849,Arr,P5),(7.461,DepT,P4),(11.745,TAH,P3),(16.9835,TAH,P1)}
 
-**FEL**:
-- (3.452, DepartureTriage, P5)
-- (4.014, DepartureTriage, P1)
-- (5.018, DepartureTriage, P4)
-- (7.176, TreatedAtHospital, P3)
-- (9.324, RecoveryHome, P2)
-- (1.988, Arrival, P6)  ← (Time is in the past relative to 3.040, so it would actually occur at the next chronological spot. We’ll reorder below.)
-
-**But wait** – (1.988, Arrival, P6) is earlier than 3.452. Actually, that event should have triggered *before* we got to 3.040. This is a sign that in a real simulation, we always pick the smallest time. If we’re strictly following chronological order, we would have fired the (1.988) arrival *before* (3.040). 
-
-> **To keep the table linear**, let’s assume we had missed that arrival earlier. We’ll fix it now: we should have processed (1.988, Arrival, P6) as **Event 7** *before* (3.040). This is a typical detail in a “manual” run – we must always pick the earliest event from the FEL.  
-> 
-> For clarity and to stay consistent, let’s simply remove that arrival of P6 from the table. Or we can keep it in but handle it at the correct time. In a typical “hand simulation of first 5 patients,” we often **ignore** arrivals after we have at least 5 patients in the system. We only care about how quickly these 5 exit.  
-> 
-> For demonstration, we’ll **ignore** the event at 1.988 to keep focusing on the original 5 patients. In a real scenario, you’d handle it in correct chronological order.
-
-Now, continuing with the departure at time 3.040:
-
-| Clock | Event                    | FEL                                                                                          | TQ | BN | OB | Comments                                                                 |
-|-------|--------------------------|----------------------------------------------------------------------------------------------|----|----|----|-------------------------------------------------------------------------|
-| 3.040 | DepTriage of **P3**     | {(3.452, DepTriage, P5), (4.014, DepTriage, P1), (5.018, DepTriage, P4), (7.176, TAH, P3), …} | 0  | 3  | 1  | P3 is critical, occupies a bed (OB=1) until 7.176. P5 enters triage.    |
+| Clock  | Event                | FEL                                                                                           | TQ | BN | OB | Comments                        |
+|--------|----------------------|-----------------------------------------------------------------------------------------------|----|----|----|---------------------------------|
+| 6.2224 | **DepT(P3)**        | {(6.309,TAH,P2),(6.7849,Arr,P5),(7.461,DepT,P4),(11.745,TAH,P3),(16.9835,TAH,P1)}              | 0  | 1  | 3  | P3 is critical; bed #3 in use.  |
 
 ---
 
-### **Event 8**: (3.452, DepartureTriage of P5)
+### **Event 8**: (6.309, TreatedAtHospital, P2)
 
-1. **Clock** ← 3.452  
-2. P5 finishes triage. TQ=0 → the nurse becomes free. BN=3 → BN=2.  
-3. Stable vs Critical for P5? `is_stable_randoms[4] = 0.537` → > 0.2 → **critical**.  
-4. Beds? OB=1 < 9, so bed is free. P5 admitted.  
-   - Hospital time from `hospital_times[1] = 16.257`. Discharge at 3.452 + 16.257 = 19.709. OB=2.  
+1. Clock → 6.309  
+2. P2 done → OB=3→2  
+3. This is our **1st** patient fully healed.  
 
-**FEL** now:
-- (4.014, DepartureTriage, P1)
-- (5.018, DepartureTriage, P4)
-- (7.176, TreatedAtHospital, P3)
-- (9.324, RecoveryHome, P2)
-- (19.709, TreatedAtHospital, P5)
+**FEL**= {(6.7849,Arr,P5),(7.461,DepT,P4),(11.745,TAH,P3),(16.9835,TAH,P1)}
 
-| Clock | Event                     | FEL                                                                                | TQ | BN | OB | Comments                                             |
-|-------|---------------------------|------------------------------------------------------------------------------------|----|----|----|------------------------------------------------------|
-| 3.452 | DepTriage of **P5**      | {(4.014, DepTriage, P1), (5.018, DepTriage, P4), (7.176, TAH, P3), (9.324, …), …}   | 0  | 2  | 2  | P5 is critical, admitted, bed #2 in use.            |
+| Clock  | Event                      | FEL                                                                                       | TQ | BN | OB | Comments                 |
+|--------|----------------------------|-------------------------------------------------------------------------------------------|----|----|----|--------------------------|
+| 6.309  | **TreatedAtHospital(P2)** | {(6.7849,Arr,P5),(7.461,DepT,P4),(11.745,TAH,P3),(16.9835,TAH,P1)}                         | 0  | 1  | 2  | **1st** patient healed. |
 
 ---
 
-### **Event 9**: (4.014, DepartureTriage of P1)
+### **Event 9**: (6.7849, Arrival, P5)
 
-1. **Clock** ← 4.014  
-2. P1 done triage. TQ=0, so BN=2 → BN=1.  
-3. is_stable_randoms[0] = 0.774 (> 0.2) → **critical**.  
-4. Beds? OB=2 < 9 → P1 admitted.  
-   - Hospital time from `hospital_times[2] = 2.333`. So discharge at 4.014 + 2.333 = 6.347. OB=3.
+1. Clock → 6.7849  
+2. BN=1<3 → P5 enters triage → BN=2  
+3. Next arrival is not needed for the first 5 patients, so we ignore or skip it.  
+4. Triage time(P5)=0.3142 → finish=6.7849+0.3142=7.0991  
+5. **FEL**= {(7.0991,DepT,P5),(7.461,DepT,P4),(11.745,TAH,P3),(16.9835,TAH,P1)}
 
-**FEL**:
-- (5.018, DepartureTriage, P4)
-- (6.347, TreatedAtHospital, P1)
-- (7.176, TreatedAtHospital, P3)
-- (9.324, RecoveryHome, P2)
-- (19.709, TreatedAtHospital, P5)
-
-| Clock | Event                     | FEL                                                                                      | TQ | BN | OB | Comments                                                       |
-|-------|---------------------------|------------------------------------------------------------------------------------------|----|----|----|----------------------------------------------------------------|
-| 4.014 | DepTriage of **P1**      | {(5.018, DepTriage, P4), (6.347, TAH, P1), (7.176, TAH, P3), (9.324, …), (19.709, …)}     | 0  | 1  | 3  | P1 is critical, enters hospital (3 beds occupied now).         |
+| Clock  | Event               | FEL                                                                                            | TQ | BN | OB | Comments          |
+|--------|---------------------|------------------------------------------------------------------------------------------------|----|----|----|-------------------|
+| 6.7849 | **Arr(P5)**         | {(7.0991,DepT,P5),(7.461,DepT,P4),(11.745,TAH,P3),(16.9835,TAH,P1)}                           | 0  | 2  | 2  | P5 in triage      |
 
 ---
 
-### **Event 10**: (5.018, DepartureTriage of P4)
+### **Event 10**: (7.0991, DepartureTriage, P5)
 
-1. **Clock** ← 5.018  
-2. P4 triage done. BN=1 → BN=0 (TQ=0).  
-3. `is_stable_randoms[3] = 0.843` (> 0.2) → **critical**.  
-4. Beds? OB=3 < 9 → admitted.  
-   - Hospital time from `hospital_times[3] = 0.815`. Discharge at 5.018 + 0.815 = 5.833. OB=4.
+1. Clock → 7.0991  
+2. BN=2→1  
+3. P5 stable vs. critical? is_stable[4]=0.0260 → ≤0.2 → **stable**  
+4. So P5 goes home: stable_home_time=10.4462 → finishing=7.0991+10.4462=17.5453  
+5. **FEL**= {(7.461,DepT,P4),(11.745,TAH,P3),(16.9835,TAH,P1),(17.5453,RecoveryHome,P5)}
 
-**FEL**:
-- (5.833, TreatedAtHospital, P4)
-- (6.347, TreatedAtHospital, P1)
-- (7.176, TreatedAtHospital, P3)
-- (9.324, RecoveryHome, P2)
-- (19.709, TreatedAtHospital, P5)
-
-| Clock | Event                     | FEL                                                                                  | TQ | BN | OB | Comments                                        |
-|-------|---------------------------|--------------------------------------------------------------------------------------|----|----|----|-------------------------------------------------|
-| 5.018 | DepTriage of **P4**      | {(5.833, TAH, P4), (6.347, TAH, P1), (7.176, TAH, P3), (9.324, RecoveryHome, P2), …}  | 0  | 0  | 4  | P4 is critical, enters hospital.                |
+| Clock  | Event                | FEL                                                                                         | TQ | BN | OB | Comments                                   |
+|--------|----------------------|---------------------------------------------------------------------------------------------|----|----|----|--------------------------------------------|
+| 7.0991 | **DepT(P5)**         | {(7.461,DepT,P4),(11.745,TAH,P3),(16.9835,TAH,P1),(17.5453,RH,P5)}                          | 0  | 1  | 2  | P5 stable → finishing home at 17.5453      |
 
 ---
 
-### **Event 11**: (5.833, TreatedAtHospital, P4)
+### **Event 11**: (7.461, DepartureTriage, P4)
 
-1. **Clock** ← 5.833  
-2. P4 finishes hospital treatment. OB=4 → 3.  
-3. P4 is **healed** → first patient fully out of the system? Actually, we need to check if P2 is done.  
-   - P2 is stable at home, scheduled to finish at 9.324, so not yet done.  
-   - So P4 is indeed the **first** patient completely done. We want 5 total done.  **Healed count = 1**.
+1. Clock → 7.461  
+2. BN=1→0  
+3. stable vs. critical for P4? is_stable[3]=0.8607→>0.2→**critical**  
+4. OB=2<9→ P4 admitted → OB=3  
+   - hospital time=13.9519 → finishing=7.461+13.9519=21.4129  
+5. **FEL**= {(11.745,TAH,P3),(16.9835,TAH,P1),(17.5453,RH,P5),(21.4129,TAH,P4)}
 
-**FEL**:
-- (6.347, TreatedAtHospital, P1)
-- (7.176, TreatedAtHospital, P3)
-- (9.324, RecoveryHome, P2)
-- (19.709, TreatedAtHospital, P5)
-
-| Clock | Event                           | FEL                                                                            | TQ | BN | OB | Comments                 |
-|-------|---------------------------------|--------------------------------------------------------------------------------|----|----|----|--------------------------|
-| 5.833 | **TreatedAtHospital** (P4 done) | {(6.347, TAH, P1), (7.176, TAH, P3), (9.324, RH, P2), (19.709, TAH, P5)}        | 0  | 0  | 3  | **1st** patient healed. |
+| Clock  | Event                | FEL                                                                                     | TQ | BN | OB | Comments                              |
+|--------|----------------------|-----------------------------------------------------------------------------------------|----|----|----|---------------------------------------|
+| 7.461  | **DepT(P4)**         | {(11.745,TAH,P3),(16.9835,TAH,P1),(17.5453,RH,P5),(21.4129,TAH,P4)}                     | 0  | 0  | 3  | P4 critical → bed #3 now in use.      |
 
 ---
 
-### **Event 12**: (6.347, TreatedAtHospital, P1)
+### **Event 12**: (11.745, TreatedAtHospital, P3)
 
-1. **Clock** ← 6.347  
-2. P1 finishes hospital. OB=3 → 2.  
-3. P1 is the **2nd** patient healed overall.
+1. Clock → 11.745  
+2. OB=3→2  
+3. P3 is the **2nd** patient to finish.  
 
-**FEL**:
-- (7.176, TreatedAtHospital, P3)
-- (9.324, RecoveryHome, P2)
-- (19.709, TreatedAtHospital, P5)
+**FEL**= {(16.9835,TAH,P1),(17.5453,RH,P5),(21.4129,TAH,P4)}
 
-| Clock  | Event                           | FEL                                                              | TQ | BN | OB | Comments                          |
-|--------|---------------------------------|------------------------------------------------------------------|----|----|----|-----------------------------------|
-| 6.347  | **TreatedAtHospital** (P1 done) | {(7.176, TAH, P3), (9.324, RH, P2), (19.709, TAH, P5)}           | 0  | 0  | 2  | **2nd** patient healed.           |
+| Clock  | Event                      | FEL                                                             | TQ | BN | OB | Comments                   |
+|--------|----------------------------|-----------------------------------------------------------------|----|----|----|----------------------------|
+| 11.745 | **TreatedAtHospital(P3)** | {(16.9835,TAH,P1),(17.5453,RH,P5),(21.4129,TAH,P4)}              | 0  | 0  | 2  | **2nd** patient finished. |
 
 ---
 
-### **Event 13**: (7.176, TreatedAtHospital, P3)
+### **Event 13**: (16.9835, TreatedAtHospital, P1)
 
-1. **Clock** ← 7.176  
-2. P3 hospital discharge, OB=2 → 1.  
-3. P3 is **3rd** patient healed.
+1. Clock → 16.9835  
+2. OB=2→1  
+3. P1 is the **3rd** patient finished.  
 
-| Clock  | Event                           | FEL                                               | TQ | BN | OB | Comments                          |
-|--------|---------------------------------|---------------------------------------------------|----|----|----|-----------------------------------|
-| 7.176  | **TreatedAtHospital** (P3 done) | {(9.324, RH, P2), (19.709, TAH, P5)}              | 0  | 0  | 1  | **3rd** patient healed.           |
+**FEL**= {(17.5453,RH,P5),(21.4129,TAH,P4)}
 
----
-
-### **Event 14**: (9.324, RecoveryHome, P2)
-
-1. **Clock** ← 9.324  
-2. P2’s stable home-care completes.  
-3. OB=1 still belongs to P5, so that’s unaffected.  
-4. P2 is **4th** patient healed.
-
-| Clock | Event                            | FEL                                | TQ | BN | OB | Comments                           |
-|-------|----------------------------------|------------------------------------|----|----|----|------------------------------------|
-| 9.324 | **RecoveryHome** (P2 done)       | {(19.709, TAH, P5)}                | 0  | 0  | 1  | **4th** patient healed.            |
+| Clock  | Event                      | FEL                                            | TQ | BN | OB | Comments                  |
+|--------|----------------------------|------------------------------------------------|----|----|----|---------------------------|
+| 16.9835| **TreatedAtHospital(P1)** | {(17.5453,RH,P5),(21.4129,TAH,P4)}             | 0  | 0  | 1  | **3rd** patient finished. |
 
 ---
 
-### **Event 15**: (19.709, TreatedAtHospital, P5)
+### **Event 14**: (17.5453, RecoveryHome, P5)
 
-1. **Clock** ← 19.709  
-2. P5 finishes hospital. OB=1 → 0.  
-3. P5 is the **5th** patient healed.  
-4. We can **stop** the hand-simulation here, as the instructions say “until the first 5 patients are healed.”
+1. Clock → 17.5453  
+2. P5 finishes stable home-care. OB=1 remains for P4  
+3. P5 is the **4th** patient done.  
 
-| Clock  | Event                           | FEL                  | TQ | BN | OB | Comments                          |
-|--------|---------------------------------|----------------------|----|----|----|-----------------------------------|
-| 19.709 | **TreatedAtHospital** (P5 done) | {} (nothing further) | 0  | 0  | 0  | **5th** patient healed → Stop.    |
+**FEL**= {(21.4129,TAH,P4)}
 
----
-
-## **Summary of the First 5 Patients**
-
-- **Patient #4** finished first at time 5.833.  
-- **Patient #1** finished second at time 6.347.  
-- **Patient #3** finished third at time 7.176.  
-- **Patient #2** finished fourth at time 9.324 (stable home-care).  
-- **Patient #5** finished fifth at time 19.709.
-
-Hence we stop once the 5th patient is healed (time 19.709).
-
-### **Comments on Results**
-
-1. **Most patients** ended up being critical (random draws) and went to the hospital except for P2.  
-2. **No rejections** occurred because 9 beds are plenty for just 5 patients.  
-3. **Longest time in system** was P5, who took 16+ hours in the hospital.  
-4. **Earliest departure** was P4, who happened to have a short hospital time draw (0.815).
-
-You would **discuss** whether these results make sense:
-- A stable patient (P2) took a moderate home-care time (8.843) → finishing at 9.324.  
-- A critical patient (P5) took a very long time (16.257) → finishing at 19.709.  
-- Others fell in between, depending on their random draws.
-
-In a real **report**:
-- You might track each patient’s **time in triage** or **time in queue** (like P5 had to wait a bit).  
-- You would also keep a column for each patient’s total time in system.  
-- You might reflect on how the queue formed briefly for P5 when all 3 nurses were busy.  
+| Clock  | Event                       | FEL                          | TQ | BN | OB | Comments                 |
+|--------|-----------------------------|------------------------------|----|----|----|--------------------------|
+| 17.5453| **RecoveryHome(P5)**       | {(21.4129,TAH,P4)}           | 0  | 0  | 1  | **4th** patient finished |
 
 ---
 
-# **Part 2.2 Results**
+### **Event 15**: (21.4129, TreatedAtHospital, P4)
+
+1. Clock → 21.4129  
+2. OB=1→0  
+3. P4 is the **5th** patient done → **stop** the simulation.  
+
+| Clock  | Event                       | FEL      | TQ | BN | OB | Comments                          |
+|--------|-----------------------------|----------|----|----|----|-----------------------------------|
+| 21.4129| **TreatedAtHospital(P4)**  | {}       | 0  | 0  | 0  | **5th** patient finished → Stop.  |
+
+---
+
+# **3. Order & Times of Completion**
+
+1. **P2** finishes first at time = **6.309**  
+2. **P3** finishes second at time = **11.745**  
+3. **P1** finishes third at time = **16.9835**  
+4. **P5** finishes fourth at time = **17.5453** (stable home-care)  
+5. **P4** finishes fifth at time = **21.4129**  
+
+Hence we stop at time 21.4129 once the 5th patient is healed.
+
+---
+
+## **Comments on Results**
+
+1. **Rejections?** None, because with \(K=9\) beds we never ran out of capacity.  
+2. **Stable vs. Critical?** Among these first 5 arrivals, only P5 turned out stable (since is_stable=0.026 ≤ 0.2). The other 4 were critical.  
+3. **Longest time** in system is P4 (21.41 hours). P4 got an unlucky large hospital time (13.9519).  
+4. **Earliest finishing** was P2 at 6.309 hours (very short hospital time of 0.6268).  
+5. **Queueing?** Only P5 briefly waited in triage at event 6.7849 → 3 nurses were busy at that point, so TQ=1.
+
+---
+
+# **Part 2.2 Simulation Results**
+
+This section presents the **model responses** requested in the homework for each of the **three starting conditions**:  
+1. **Empty system**  
+2. **Half-full** (half of the nurses and half of the beds occupied at time zero)  
+3. **Full** (all nurses and all beds occupied at time zero)
+
+We run the simulation until we have:  
+- **20 healed patients**  
+- **200 healed patients**  
+- **1000 healed patients**  
+
+using the **same random number seed**. Additionally, we provide **20 replications** for the **200 healed patients** scenario to generate confidence intervals.
+
+---
+
+## **1. Model Responses**
+
+Below is the list of performance metrics we must report for each run:
+
+1. **Long-run marginal probability triage is empty**  
+2. **Long-run marginal probability beds are empty**  
+3. **Long-run marginal probability both are empty**  
+4. **Proportion of critical patients rejected** (due to bed unavailability)  
+5. **Average utilization** of each triage nurse  
+6. **Average number of occupied beds** in the hospital  
+7. **Proportion of patients that are treated at home**  
+8. **Average time a sick person gets better**  
+
+---
+
+## **2. Results for Each Condition and Run Length**
+
+### **2.1 Empty System**
+
+We start the system with no patients in queue, no nurses occupied, and no beds occupied.
+
+#### **2.1.1. 20 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.277       |
+| Probability beds empty                                 | 0.149       |
+| Probability both empty                                 | 0.086       |
+| Proportion of critical patients rejected               | 0.000       |
+| Average utilization of each triage nurse               | 0.449       |
+| Average number of occupied beds                        | 3.601       |
+| Proportion of patients treated at home                 | 0.179       |
+| Average time a sick person gets better                 | 7.688       |
+
+**Discussion**:  
+- Only 20 patients means higher variability. Triage is empty 27.7% of the time and beds 14.9%, with no rejections. Nurse utilization is modest (0.449), reflecting relatively light usage in such a short run. The average time to recover is about 7.69 hours, indicating little queueing or delays so early.
+
+#### **2.1.2. 200 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.101       |
+| Probability beds empty                                 | 0.025       |
+| Probability both empty                                 | 0.014       |
+| Proportion of critical patients rejected               | 0.085       |
+| Average utilization of each triage nurse               | 0.763       |
+| Average number of occupied beds                        | 5.448       |
+| Proportion of patients treated at home                 | 0.294       |
+| Average time a sick person gets better                 | 8.997       |
+
+**Discussion**:  
+- At 200 patients, the system is busier. Triage is empty only 10.1% and beds 2.5%. Some critical patients get rejected (8.5%), and nurse utilization rises to 0.763. The average recovery time increases to nearly 9 hours, highlighting more congestion than in the 20-patient run.
+
+#### **2.1.3. 1000 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.109       |
+| Probability beds empty                                 | 0.007       |
+| Probability both empty                                 | 0.003       |
+| Proportion of critical patients rejected               | 0.115       |
+| Average utilization of each triage nurse               | 0.709       |
+| Average number of occupied beds                        | 6.037       |
+| Proportion of patients treated at home                 | 0.296       |
+| Average time a sick person gets better                 | 10.547      |
+
+**Discussion**:  
+- Longer run (1000 patients) sees triage empty 10.9%, beds empty 0.7%, and rejections at 11.5%. Nurse utilization dips a bit to 0.709, though average bed occupancy is around six. Recovery time exceeds 10 hours, reflecting heavier, more sustained load.
+
+---
+
+### **2.2 Half-Full System**
+
+We start the system with approximately half of the nurses and half the beds **already** occupied at time zero, each with a randomly scheduled departure event.
+
+#### **2.2.1. 20 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.137       |
+| Probability beds empty                                 | 0.000       |
+| Probability both empty                                 | 0.000       |
+| Proportion of critical patients rejected               | 0.056       |
+| Average utilization of each triage nurse               | 0.597       |
+| Average number of occupied beds                        | 6.014       |
+| Proportion of patients treated at home                 | 0.230       |
+| Average time a sick person gets better                 | 7.915       |
+
+**Discussion**:  
+- Starting half-full means beds are almost never empty early on. Rejections appear at 5.6%, nurse utilization is 0.597, and average recovery is ~7.92 hours—slightly higher than the empty 20-patient case but still fairly transient.
+
+#### **2.2.2. 200 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.075       |
+| Probability beds empty                                 | 0.000       |
+| Probability both empty                                 | 0.000       |
+| Proportion of critical patients rejected               | 0.087       |
+| Average utilization of each triage nurse               | 0.796       |
+| Average number of occupied beds                        | 5.959       |
+| Proportion of patients treated at home                 | 0.297       |
+| Average time a sick person gets better                 | 9.153       |
+
+**Discussion**:  
+- With 200 patients, the half-full system starts resembling the empty scenario after some time. Beds remain in constant use (0% empty), and the rejection rate is 8.7%. Nurse utilization is high (0.796), with an average recovery time of 9.15 hours—close to the empty system’s 9.0.
+
+#### **2.2.3. 1000 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.104       |
+| Probability beds empty                                 | 0.001       |
+| Probability both empty                                 | 0.0001      |
+| Proportion of critical patients rejected               | 0.117       |
+| Average utilization of each triage nurse               | 0.715       |
+| Average number of occupied beds                        | 6.150       |
+| Proportion of patients treated at home                 | 0.298       |
+| Average time a sick person gets better                 | 10.588      |
+
+**Discussion**:  
+- By 1000 patients, triage empty time (10.4%) and rejections (11.7%) closely match the empty system. Nurse utilization is 0.715, and average recovery reaches 10.59 hours, again aligning well with the empty case. The system “forgets” its half-full start.
+
+---
+
+### **2.3 Fully Full System**
+
+We start the system with all nurses occupied and all beds occupied at time zero, each having a random completion event.
+
+#### **2.3.1. 20 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.250       |
+| Probability beds empty                                 | 0.000       |
+| Probability both empty                                 | 0.000       |
+| Proportion of critical patients rejected               | 0.133       |
+| Average utilization of each triage nurse               | 0.413       |
+| Average number of occupied beds                        | 5.308       |
+| Proportion of patients treated at home                 | 0.167       |
+| Average time a sick person gets better                 | 5.985       |
+
+**Discussion**:  
+- Full at the start causes immediate rejections (13.3%), but nurse utilization for this short run is just 0.413, and triage is empty 25% of the time, reflecting quick departure of the initial “dummy” patients. Average recovery time is only 5.99 hours—some quick completions freed capacity relatively fast.
+
+#### **2.3.2. 200 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.084       |
+| Probability beds empty                                 | 0.000       |
+| Probability both empty                                 | 0.000       |
+| Proportion of critical patients rejected               | 0.083       |
+| Average utilization of each triage nurse               | 0.777       |
+| Average number of occupied beds                        | 5.486       |
+| Proportion of patients treated at home                 | 0.292       |
+| Average time a sick person gets better                 | 8.754       |
+
+**Discussion**:  
+- After 200 patients, the full initial load matters less. Rejections drop to 8.3%, with nurse utilization at 0.777. Triage empties 8.4% of the time. The system essentially converges to similar behavior as the empty/half starts, and average recovery is 8.75 hours
+
+#### **2.3.3. 1000 Healed Patients**  
+
+| Performance Metric                                     | Value  |
+|--------------------------------------------------------|--------|
+| Probability triage empty                               | 0.106       |
+| Probability beds empty                                 | 0.001       |
+| Probability both empty                                 | 0.0001      |
+| Proportion of critical patients rejected               | 0.118       |
+| Average utilization of each triage nurse               | 0.710       |
+| Average number of occupied beds                        | 6.083       |
+| Proportion of patients treated at home                 | 0.299       |
+| Average time a sick person gets better                 | 10.519      |
+
+**Discussion**:  
+- At 1000 patients, triage is empty ~10.6%, rejections ~11.8%, and average time ~10.52 hours—near identical to the other scenarios. Full initial loading thus loses significance in the long run.
+
+---
+
+## **3. 20 Replications for 200 Healed Patients**
+
+For **confidence intervals**, we perform **20 independent replications** (using different random seeds) for the case of **200 healed patients**. Here we present the **mean** value for each metric, along with its **95% confidence interval**. We do this for each initial condition (`empty`, `half`, `full`).
+
+### **3.1. Empty System, 20 Replications for 200 Healed Patients**
+
+| Performance Metric                          | Mean    | 95% CI (Lower) | 95% CI (Upper) |
+|--------------------------------------------|---------|---------------|---------------|
+| Probability triage empty                   |  0.0969 |        0.0845 |        0.1094 |
+| Probability beds empty                     |  0.0166 |        0.0120 |        0.0212 |
+| Probability both empty                     |  0.0066 |        0.0042 |        0.0090 |
+| Proportion of critical patients rejected   |  0.0987 |        0.0838 |        0.1136 |
+| Average nurse utilization                  |  0.6992 |        0.6724 |        0.7259 |
+| Average number of occupied beds            |  5.7201 |        5.5613 |        5.8788 |
+| Proportion of patients treated at home     |  0.2764 |        0.2597 |        0.2932 |
+| Average time a sick person gets better     | 10.0167 |        9.6866 |       10.3469 |
+
+
+---
+
+### **3.2. Half-Full, 20 Replications for 200 Healed Patients**
+
+| Performance Metric                          | Mean    | 95% CI (Lower) | 95% CI (Upper) |
+|--------------------------------------------|---------|---------------|---------------|
+| Probability triage empty                   |  0.1030 |        0.0830 |        0.1230 |
+| Probability beds empty                     |  0.0009 |        0.0000 |        0.0019 |
+| Probability both empty                     |  0.0000 |        0.0000 |        0.0000 |
+| Proportion of critical patients rejected   |  0.0991 |        0.0825 |        0.1158 |
+| Average nurse utilization                  |  0.6924 |        0.6550 |        0.7297 |
+| Average number of occupied beds            |  5.8288 |        5.6156 |        6.0420 |
+| Proportion of patients treated at home     |  0.2824 |        0.2658 |        0.2990 |
+| Average time a sick person gets better     |  9.8559 |        9.6125 |       10.0993 |
+
+---
+
+### **3.3. Full, 20 Replications for 200 Healed Patients**
+
+| Performance Metric                          | Mean    | 95% CI (Lower) | 95% CI (Upper) |
+|--------------------------------------------|---------|---------------|---------------|
+| Probability triage empty                   |  0.0921 |        0.0752 |        0.1089 |
+| Probability beds empty                     |  0.0020 |       -0.0001 |        0.0041 |
+| Probability both empty                     |  0.0003 |       -0.0003 |        0.0009 |
+| Proportion of critical patients rejected   |  0.1125 |        0.0933 |        0.1317 |
+| Average nurse utilization                  |  0.7028 |        0.6683 |        0.7373 |
+| Average number of occupied beds            |  6.0385 |        5.8117 |        6.2652 |
+| Proportion of patients treated at home     |  0.2952 |        0.2801 |        0.3103 |
+| Average time a sick person gets better     |  9.9434 |        9.6219 |       10.2649 |
+
+---
+
+## **4. Comparisons & Conclusions**
+- Run Length: At 20 patients, results vary a lot; by 200 or 1000, the system is more stable, with higher utilization, some rejections, and more consistent average times.
+
+- Initial Conditions: Differences are most noticeable in short runs. By 200–1000 patients, all scenarios converge on similar metrics.
+
+- Confidence Intervals: Twenty-rep CIs show moderate variation around the means, but not enough to contradict the overall convergent behavior.
+
+In conclusion, the system eventually “forgets” its initial state, stabilizing around ~70–80% nurse utilization, 5–6 beds occupied on average, and ~10 hours average recovery time with ~10–12% rejections.
+
+---
 

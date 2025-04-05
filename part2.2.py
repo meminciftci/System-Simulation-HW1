@@ -398,7 +398,7 @@ def run_simulation(target_healed, max_events, initial_condition):
 if __name__ == "__main__":
     # Example: let's do 20 healed, with 'full' initial condition
     random.seed(SEED)
-    ev_hist, stats = run_simulation(target_healed=200, max_events=9999999, initial_condition='full')
+    ev_hist, stats = run_simulation(target_healed=1000, max_events=9999999, initial_condition='full')
 
     print("First 20 events (or fewer):")
     for row in ev_hist:
@@ -407,3 +407,48 @@ if __name__ == "__main__":
     print("\nFinal Stats:")
     for k,v in stats.items():
         print(f"{k}: {v}")
+
+# ===============================
+# RUN MULTIPLE SIMULATIONS & REPORT STATS
+# ===============================
+# if __name__ == "__main__":
+#     num_runs = 20
+#     all_results = []
+#     base_seed = 4040800189
+
+#     for i in range(num_runs):
+#         SEED = base_seed + i  # update seed for each run
+#         random.seed(SEED)
+#         # Run the simulation with target healed patients = 1000 and 'full' initial condition
+#         _, stats = run_simulation(target_healed=200, max_events=9999999, initial_condition='full')
+#         all_results.append(stats)
+
+#     # Collect metrics of interest across runs
+#     metrics = {
+#         "Probability triage empty": [r['prob_triage_empty'] for r in all_results],
+#         "Probability beds empty": [r['prob_beds_empty'] for r in all_results],
+#         "Probability both empty": [r['prob_both_empty'] for r in all_results],
+#         "Proportion of critical patients rejected": [r['crit_reject_rate'] for r in all_results],
+#         "Average nurse utilization": [r['avg_nurse_util'] for r in all_results],
+#         "Average number of occupied beds": [r['avg_occupied_beds'] for r in all_results],
+#         "Proportion of patients treated at home": [r['prop_treated_home'] for r in all_results],
+#         "Average time a sick person gets better": [r['avg_time_in_system'] for r in all_results],
+#     }
+
+#     # Compute mean and 95% confidence intervals (using t-distribution, t ≈ 2.093 for df=19)
+#     t_value = 2.093
+#     summary = {}
+#     for metric, values in metrics.items():
+#         n = len(values)
+#         mean_val = sum(values) / n
+#         variance = sum((x - mean_val) ** 2 for x in values) / (n - 1)
+#         std_error = math.sqrt(variance) / math.sqrt(n)
+#         ci_lower = mean_val - t_value * std_error
+#         ci_upper = mean_val + t_value * std_error
+#         summary[metric] = (mean_val, ci_lower, ci_upper)
+
+#     # Print the summary table
+#     print("| Performance Metric                          | Mean    | 95% CI (Lower) | 95% CI (Upper) |")
+#     print("|--------------------------------------------|---------|---------------|---------------|")
+#     for metric, (mean_val, ci_lower, ci_upper) in summary.items():
+#         print(f"| {metric:<42} | {mean_val:7.4f} | {ci_lower:13.4f} | {ci_upper:13.4f} |")
