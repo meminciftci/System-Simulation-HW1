@@ -1,7 +1,8 @@
-Below is a suggested **Part 1.1** write-up that fulfills all the requirements: the conceptual model, identification of entities/attributes/events, activities/delays, system states, random variables, a flowchart, pseudocode for the discrete-event simulation, and a brief summary of the stationary analysis results.
+### Duran Kaan Altın-2020400108
+### Muhammet Emin Çiftçi-2020400081
 
----
 
+# **IE306 HW1**
 # **Part 1.1**
 
 ## **1. Conceptual Model**
