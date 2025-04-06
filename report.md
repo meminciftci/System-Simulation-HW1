@@ -107,6 +107,7 @@ Once at home, either stable or critical (but rejected), the patient recovers at 
 
 Below is a high-level flowchart showing the patient lifecycle. 
 
+![alt text](simulation_flowchart.jpg)
 
 ---
 
