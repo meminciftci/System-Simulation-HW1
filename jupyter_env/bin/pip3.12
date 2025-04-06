@@ -1,0 +1,10 @@
+#!/bin/sh
+'''exec' "/home/mami/Desktop/4th Grade 2nd Term (Spring)/IE306/HWs/HW1/System-Simulation-HW1/jupyter_env/bin/python3" "$0" "$@"
+' '''
+# -*- coding: utf-8 -*-
+import re
+import sys
+from pip._internal.cli.main import main
+if __name__ == '__main__':
+    sys.argv[0] = re.sub(r'(-script\.pyw|\.exe)?$', '', sys.argv[0])
+    sys.exit(main())
